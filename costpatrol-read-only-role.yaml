@@ -50,13 +50,31 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Cost Explorer — cost data, forecasts, RI/SP coverage and recommendations
+              # Hard guardrail. An explicit Deny always wins in IAM, regardless of
+              # statement order, so this denies EVERYTHING that is not a read-only
+              # Describe / List / Get operation. Even if a write permission were
+              # ever added below by mistake, this blocks it: the role can never
+              # create, modify, or delete anything in your account.
+              - Sid: DenyEverythingExceptReadOnly
+                Effect: Deny
+                NotAction:
+                  - '*:Get*'
+                  - '*:Describe*'
+                  - '*:List*'
+                  - '*:BatchGet*'
+                  - 'apigateway:GET'
+                  - 'logs:StartQuery'
+                  - 'logs:GetQueryResults'
+                Resource: '*'
+
+              # Cost Explorer — cost data, forecasts, RI/SP coverage, cost tags
               - Sid: CostExplorerReadOnly
                 Effect: Allow
                 Action:
                   - ce:GetCostAndUsage
                   - ce:GetCostForecast
                   - ce:GetDimensionValues
+                  - ce:GetTags
                   - ce:GetReservationUtilization
                   - ce:GetReservationCoverage
                   - ce:GetReservationPurchaseRecommendation
@@ -66,7 +84,7 @@ Resources:
                   - ce:ListCostAllocationTags
                 Resource: '*'
 
-              # CloudWatch — metrics, alarms, metric streams, and Logs Insights
+              # CloudWatch — metrics, alarms, metric streams, log group metadata
               - Sid: CloudWatchReadOnly
                 Effect: Allow
                 Action:
@@ -77,11 +95,12 @@ Resources:
                   - cloudwatch:ListMetricStreams
                   - cloudwatch:GetMetricStream
                   - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
                   - logs:StartQuery
                   - logs:GetQueryResults
                 Resource: '*'
 
-              # EC2 — instance, volume, NAT gateway, VPC, VPN, networking, AMI metadata
+              # EC2 — instance, volume, NAT gateway, VPC, VPN, networking metadata
               - Sid: EC2ReadOnly
                 Effect: Allow
                 Action:
@@ -105,7 +124,7 @@ Resources:
                   - ec2:DescribeImages
                 Resource: '*'
 
-              # Lambda — function metadata and provisioned concurrency
+              # Lambda — function metadata
               - Sid: LambdaReadOnly
                 Effect: Allow
                 Action:
@@ -114,7 +133,7 @@ Resources:
                   - lambda:ListProvisionedConcurrencyConfigs
                 Resource: '*'
 
-              # RDS — database instance, cluster, snapshot, and reservation metadata
+              # RDS — database instance metadata (also covers DocumentDB/Neptune via rds:)
               - Sid: RDSReadOnly
                 Effect: Allow
                 Action:
@@ -138,7 +157,15 @@ Resources:
                   - dynamodb:ListTagsOfResource
                 Resource: '*'
 
-              # S3 — bucket metadata, encryption, lifecycle, intelligent-tiering, multipart
+              # Application Auto Scaling — scalable targets and policies (DynamoDB et al.)
+              - Sid: ApplicationAutoScalingReadOnly
+                Effect: Allow
+                Action:
+                  - application-autoscaling:DescribeScalableTargets
+                  - application-autoscaling:DescribeScalingPolicies
+                Resource: '*'
+
+              # S3 — bucket metadata, lifecycle, encryption, intelligent-tiering
               - Sid: S3ReadOnly
                 Effect: Allow
                 Action:
@@ -146,12 +173,13 @@ Resources:
                   - s3:GetBucketLocation
                   - s3:GetBucketVersioning
                   - s3:GetLifecycleConfiguration
-                  - s3:GetEncryptionConfiguration
-                  - s3:ListBucketIntelligentTieringConfigurations
+                  - s3:GetBucketTagging
                   - s3:ListBucketMultipartUploads
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetIntelligentTieringConfiguration
                 Resource: '*'
 
-              # ELB — load balancer, target group, and target health metadata
+              # ELB — load balancer metadata
               - Sid: ELBReadOnly
                 Effect: Allow
                 Action:
@@ -160,7 +188,7 @@ Resources:
                   - elasticloadbalancing:DescribeTargetHealth
                 Resource: '*'
 
-              # ECS — cluster, service, and task definition metadata
+              # ECS — cluster and service metadata
               - Sid: ECSReadOnly
                 Effect: Allow
                 Action:
@@ -186,6 +214,8 @@ Resources:
                 Effect: Allow
                 Action:
                   - elasticache:DescribeCacheClusters
+                  - elasticache:DescribeReplicationGroups
+                  - elasticache:DescribeReservedCacheNodes
                 Resource: '*'
 
               # API Gateway — REST API metadata
@@ -195,7 +225,7 @@ Resources:
                   - apigateway:GET
                 Resource: '*'
 
-              # Backup — vault, plan, and tag metadata
+              # Backup — vault and plan metadata
               - Sid: BackupReadOnly
                 Effect: Allow
                 Action:
@@ -220,7 +250,7 @@ Resources:
                   - cloudfront:ListDistributions
                 Resource: '*'
 
-              # CloudTrail — trail, status, and event selector metadata
+              # CloudTrail — trail metadata
               - Sid: CloudTrailReadOnly
                 Effect: Allow
                 Action:
@@ -229,14 +259,7 @@ Resources:
                   - cloudtrail:GetEventSelectors
                 Resource: '*'
 
-              # Compute Optimizer — rightsizing recommendations
-              - Sid: ComputeOptimizerReadOnly
-                Effect: Allow
-                Action:
-                  - compute-optimizer:GetEC2InstanceRecommendations
-                Resource: '*'
-
-              # AWS Config — config recorder and discovered resource metadata
+              # Config — recorder status and discovered-resource counts (unnecessary-region check)
               - Sid: ConfigReadOnly
                 Effect: Allow
                 Action:
@@ -245,7 +268,7 @@ Resources:
                   - config:GetDiscoveredResourceCounts
                 Resource: '*'
 
-              # GuardDuty — detector configuration metadata
+              # GuardDuty — detector metadata (idle / unnecessary coverage check)
               - Sid: GuardDutyReadOnly
                 Effect: Allow
                 Action:
@@ -253,35 +276,11 @@ Resources:
                   - guardduty:GetDetector
                 Resource: '*'
 
-              # Application Auto Scaling — DynamoDB/ECS scaling configuration
-              - Sid: ApplicationAutoScalingReadOnly
+              # Compute Optimizer — rightsizing recommendations
+              - Sid: ComputeOptimizerReadOnly
                 Effect: Allow
                 Action:
-                  - application-autoscaling:DescribeScalableTargets
-                  - application-autoscaling:DescribeScalingPolicies
-                Resource: '*'
-
-              # DocumentDB — cluster and instance metadata
-              - Sid: DocumentDBReadOnly
-                Effect: Allow
-                Action:
-                  - docdb:DescribeDBClusters
-                  - docdb:DescribeDBInstances
-                Resource: '*'
-
-              # Neptune — cluster and instance metadata
-              - Sid: NeptuneReadOnly
-                Effect: Allow
-                Action:
-                  - neptune:DescribeDBClusters
-                  - neptune:DescribeDBInstances
-                Resource: '*'
-
-              # AWS Pricing — public pricing catalog used for live region pricing
-              - Sid: PricingReadOnly
-                Effect: Allow
-                Action:
-                  - pricing:GetProducts
+                  - compute-optimizer:GetEC2InstanceRecommendations
                 Resource: '*'
 
               # ECR — container registry metadata
@@ -361,7 +360,7 @@ Resources:
                   - kms:ListGrants
                 Resource: '*'
 
-              # MemoryDB — cluster and reservation metadata
+              # MemoryDB — cluster metadata
               - Sid: MemoryDBReadOnly
                 Effect: Allow
                 Action:
@@ -369,7 +368,7 @@ Resources:
                   - memorydb:DescribeReservedNodes
                 Resource: '*'
 
-              # OpenSearch — domain and reservation metadata
+              # OpenSearch — domain metadata
               - Sid: OpenSearchReadOnly
                 Effect: Allow
                 Action:
@@ -378,7 +377,7 @@ Resources:
                   - es:DescribeReservedInstances
                 Resource: '*'
 
-              # Redshift — provisioned and serverless cluster metadata
+              # Redshift — cluster metadata
               - Sid: RedshiftReadOnly
                 Effect: Allow
                 Action:
@@ -386,7 +385,7 @@ Resources:
                   - redshift-serverless:ListWorkgroups
                 Resource: '*'
 
-              # Route 53 — hosted zone and record set metadata
+              # Route 53 — hosted zone metadata
               - Sid: Route53ReadOnly
                 Effect: Allow
                 Action:
@@ -418,7 +417,7 @@ Resources:
                   - transfer:ListServers
                 Resource: '*'
 
-              # Organizations — detect org membership and enumerate member accounts
+              # Organizations — detect org membership + list member accounts
               - Sid: OrganizationsDetect
                 Effect: Allow
                 Action:
